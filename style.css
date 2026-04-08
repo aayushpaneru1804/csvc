@@ -1,0 +1,24 @@
+.bodyStyle {
+	font-family: Arial, sans-serif;
+	margin: 20px;
+}
+
+.center {
+	text-align: center;
+}
+
+.topnav a {
+	margin-right: 12px;
+}
+
+table,
+th,
+td {
+	border: 1px solid #ddd;
+	border-collapse: collapse;
+}
+
+th,
+td {
+	padding: 8px;
+}
