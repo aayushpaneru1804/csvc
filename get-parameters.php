@@ -1,10 +1,20 @@
 <?php
   # Retrieve settings from Secrets Manager
-  error_log('Retrieving settings');
+  ini_set('display_errors', 1);
+  error_reporting(E_ALL);
+  error_log('Retrieving settings from Secrets Manager');
+
+if (!file_exists('aws.phar')) {
+  throw new Exception('Missing aws.phar library in application root');
+}
 require 'aws.phar';
 
-$az = file_get_contents('http://169.254.169.254/latest/meta-data/placement/availability-zone');
-$region = substr($az, 0, -1);
+$az = @file_get_contents('http://169.254.169.254/latest/meta-data/placement/availability-zone');
+if ($az !== false) {
+  $region = substr($az, 0, -1);
+} else {
+  $region = getenv('AWS_REGION') ?: getenv('AWS_DEFAULT_REGION') ?: 'us-east-1';
+}
 
 try {
   $secrets_client = new Aws\SecretsManager\SecretsManagerClient([
@@ -20,12 +30,17 @@ try {
   $secret_json = $result['SecretString'];
   $secret_data = json_decode($secret_json, true);
 
-  $ep = $secret_data['host'];
-  $un = $secret_data['username'];
-  $pw = $secret_data['password'];
-  $db = $secret_data['database'];
+  if (!is_array($secret_data)) {
+    throw new Exception('Secrets JSON is invalid or empty');
   }
-  catch (Exception $e) {
+
+  $ep = $secret_data['host'] ?? '';
+  $un = $secret_data['username'] ?? '';
+  $pw = $secret_data['password'] ?? '';
+  $db = $secret_data['database'] ?? '';
+}
+catch (Exception $e) {
+  error_log('Secret retrieval failed: ' . $e->getMessage());
   $ep = '';
   $db = '';
   $un = '';
