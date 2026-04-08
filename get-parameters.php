@@ -1,50 +1,52 @@
 <?php
-  # Retrieve settings from Secrets Manager
+  # Retrieve settings from Secrets Manager using AWS CLI to avoid deprecated SDK issues.
   ini_set('display_errors', 1);
-  error_reporting(E_ALL);
-  error_log('Retrieving settings from Secrets Manager');
+  error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
 
-if (!file_exists('aws.phar')) {
-  throw new Exception('Missing aws.phar library in application root');
-}
-require 'aws.phar';
-
-$az = @file_get_contents('http://169.254.169.254/latest/meta-data/placement/availability-zone');
-if ($az !== false) {
-  $region = substr($az, 0, -1);
-} else {
-  $region = getenv('AWS_REGION') ?: getenv('AWS_DEFAULT_REGION') ?: 'us-east-1';
-}
-
-try {
-  $secrets_client = new Aws\SecretsManager\SecretsManagerClient([
-    'version' => 'latest',
-    'region'  => $region
-  ]);
-
-  # Retrieve secret from Secrets Manager
-  $result = $secrets_client->getSecretValue([
-    'SecretId' => 'countries/db/credentials'
-  ]);
-
-  $secret_json = $result['SecretString'];
-  $secret_data = json_decode($secret_json, true);
-
-  if (!is_array($secret_data)) {
-    throw new Exception('Secrets JSON is invalid or empty');
+$region = getenv('AWS_REGION') ?: getenv('AWS_DEFAULT_REGION');
+if (empty($region)) {
+  $az = @file_get_contents('http://169.254.169.254/latest/meta-data/placement/availability-zone');
+  if ($az !== false) {
+    $region = substr($az, 0, -1);
   }
+}
+if (empty($region)) {
+  $region = 'us-east-1';
+}
 
+$aws_bin = trim(shell_exec('command -v aws 2>/dev/null'));
+if ($aws_bin === '') {
+  $aws_bin = trim(shell_exec('which aws 2>/dev/null'));
+}
+
+$secret_data = null;
+if ($aws_bin !== '') {
+  $cmd = sprintf(
+    '%s secretsmanager get-secret-value --secret-id countries/db/credentials --region %s --query SecretString --output text 2>&1',
+    escapeshellarg($aws_bin),
+    escapeshellarg($region)
+  );
+  $secret_json = trim(shell_exec($cmd));
+} else {
+  $secret_json = '';
+}
+
+if ($secret_json === '' || stripos($secret_json, 'error') !== false) {
+  error_log('Secret retrieval failed: ' . $secret_json);
+} else {
+  $secret_data = json_decode($secret_json, true);
+}
+
+if (!is_array($secret_data)) {
+  $ep = getenv('DB_HOST') ?: '';
+  $un = getenv('DB_USER') ?: '';
+  $pw = getenv('DB_PASS') ?: '';
+  $db = getenv('DB_NAME') ?: '';
+} else {
   $ep = $secret_data['host'] ?? '';
   $un = $secret_data['username'] ?? '';
   $pw = $secret_data['password'] ?? '';
   $db = $secret_data['database'] ?? '';
-}
-catch (Exception $e) {
-  error_log('Secret retrieval failed: ' . $e->getMessage());
-  $ep = '';
-  $db = '';
-  $un = '';
-  $pw = '';
 }
 
 ?>
